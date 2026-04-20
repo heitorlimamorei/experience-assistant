@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: experience-assistant
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: OPENAI_API_KEY
+        sync: false
+      - key: OPENAI_MODEL
+        value: gpt-5.4-mini
+      - key: OPENAI_AGENT_MAX_STEPS
+        value: "5"

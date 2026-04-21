@@ -20,28 +20,6 @@ export const NewWhatsAppWebhookHandler = ({
 }: WhatsAppWebhookHandlerDependencies): Hono => {
   const handler = new Hono();
 
-  handler.get("/webhooks/twilio/whatsapp/message", (context) => {
-    return context.json({
-      ok: true,
-      route: "/webhooks/twilio/whatsapp/message",
-      methods: ["GET", "POST"],
-      provider: "twilio",
-      contentType: "application/x-www-form-urlencoded",
-      respondsWith: "text/xml",
-    });
-  });
-
-  handler.get("/webhooks/twilio/whatsapp/status", (context) => {
-    return context.json({
-      ok: true,
-      route: "/webhooks/twilio/whatsapp/status",
-      methods: ["GET", "POST"],
-      provider: "twilio",
-      contentType: "application/x-www-form-urlencoded",
-      respondsWith: "204/200 sem body",
-    });
-  });
-
   handler.post("/webhooks/twilio/whatsapp/message", async (context) => {
     const requestBody = await readFormUrlEncodedBody(context);
     validateTwilioRequest({
@@ -204,33 +182,68 @@ const validateTwilioRequest = ({
   context: Context;
   requestBody: Record<string, string>;
 }) => {
+  const requestUrl = context.req.url;
+  const signature =
+    context.req.header("x-twilio-signature") ||
+    context.req.header("X-Twilio-Signature");
+
   if (!config.twilioWebhookValidateSignature) {
+    console.info("[twilio-whatsapp-webhook] signature validation skipped", {
+      url: requestUrl,
+      reason: "TWILIO_WEBHOOK_VALIDATE_SIGNATURE=false",
+      signatureHeaderPresent: Boolean(signature),
+    });
+
     return;
   }
 
   if (!config.twilioAuthToken) {
+    console.error("[twilio-whatsapp-webhook] signature validation blocked", {
+      url: requestUrl,
+      reason: "TWILIO_AUTH_TOKEN missing",
+      signatureHeaderPresent: Boolean(signature),
+    });
+
     throw new ApplicationError(
       503,
       "TWILIO_AUTH_TOKEN nao foi configurado para validar webhooks.",
     );
   }
 
-  const signature =
-    context.req.header("x-twilio-signature") ||
-    context.req.header("X-Twilio-Signature");
+  console.info("[twilio-whatsapp-webhook] validating signature", {
+    url: requestUrl,
+    signatureHeaderPresent: Boolean(signature),
+    payloadKeys: Object.keys(requestBody).sort(),
+  });
 
   if (!signature) {
+    console.error("[twilio-whatsapp-webhook] signature validation failed", {
+      url: requestUrl,
+      reason: "X-Twilio-Signature header missing",
+    });
+
     throw new ApplicationError(403, "Assinatura do webhook da Twilio ausente.");
   }
 
   const isValidRequest = twilio.validateRequest(
     config.twilioAuthToken,
     signature,
-    context.req.url,
+    requestUrl,
     requestBody,
   );
 
   if (!isValidRequest) {
+    console.error("[twilio-whatsapp-webhook] signature validation failed", {
+      url: requestUrl,
+      reason: "signature mismatch",
+      payloadKeys: Object.keys(requestBody).sort(),
+    });
+
     throw new ApplicationError(403, "Assinatura do webhook da Twilio invalida.");
   }
+
+  console.info("[twilio-whatsapp-webhook] signature validation passed", {
+    url: requestUrl,
+    payloadKeys: Object.keys(requestBody).sort(),
+  });
 };

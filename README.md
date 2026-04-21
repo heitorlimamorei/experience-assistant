@@ -41,9 +41,7 @@ bun run dev
 
 - `GET /health`
 - `POST /chat`
-- `GET /webhooks/twilio/whatsapp/message`
 - `POST /webhooks/twilio/whatsapp/message`
-- `GET /webhooks/twilio/whatsapp/status`
 - `POST /webhooks/twilio/whatsapp/status`
 
 ## Exemplos

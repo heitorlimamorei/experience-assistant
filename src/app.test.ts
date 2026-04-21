@@ -111,51 +111,27 @@ describe("application", () => {
     expect(parsedBody.tools[0]?.toolName).toBe("getCurrentDateTime");
   });
 
-  it("describes the Twilio WhatsApp message webhook route", async () => {
+  it("does not expose the Twilio WhatsApp message webhook over GET", async () => {
     const app = NewApp(createFakeDependencies());
 
     const response = await app.request("/webhooks/twilio/whatsapp/message");
-    const body = (await response.json()) as {
-      ok: boolean;
-      route: string;
-      methods: string[];
-      provider: string;
-      contentType: string;
-      respondsWith: string;
-    };
+    const body = (await response.json()) as { error: string };
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(404);
     expect(body).toEqual({
-      ok: true,
-      route: "/webhooks/twilio/whatsapp/message",
-      methods: ["GET", "POST"],
-      provider: "twilio",
-      contentType: "application/x-www-form-urlencoded",
-      respondsWith: "text/xml",
+      error: "Rota nao encontrada.",
     });
   });
 
-  it("describes the Twilio WhatsApp status webhook route", async () => {
+  it("does not expose the Twilio WhatsApp status webhook over GET", async () => {
     const app = NewApp(createFakeDependencies());
 
     const response = await app.request("/webhooks/twilio/whatsapp/status");
-    const body = (await response.json()) as {
-      ok: boolean;
-      route: string;
-      methods: string[];
-      provider: string;
-      contentType: string;
-      respondsWith: string;
-    };
+    const body = (await response.json()) as { error: string };
 
-    expect(response.status).toBe(200);
+    expect(response.status).toBe(404);
     expect(body).toEqual({
-      ok: true,
-      route: "/webhooks/twilio/whatsapp/status",
-      methods: ["GET", "POST"],
-      provider: "twilio",
-      contentType: "application/x-www-form-urlencoded",
-      respondsWith: "204/200 sem body",
+      error: "Rota nao encontrada.",
     });
   });
 

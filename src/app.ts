@@ -17,9 +17,7 @@ export const NewApp = (dependencies: ApplicationDependencies): Hono => {
         health: "GET /health",
         chat: "POST /chat",
         whatsAppWebhook: [
-          "GET /webhooks/twilio/whatsapp/message",
           "POST /webhooks/twilio/whatsapp/message",
-          "GET /webhooks/twilio/whatsapp/status",
           "POST /webhooks/twilio/whatsapp/status",
         ],
       },

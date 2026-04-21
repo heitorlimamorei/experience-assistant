@@ -1,7 +1,6 @@
 import { Hono } from "hono";
 
 import type { ApplicationDependencies } from "./container/container";
-import { NewChatHandler } from "./handlers/chat.handler";
 import { NewHealthHandler } from "./handlers/health.handler";
 import { NewWhatsAppWebhookHandler } from "./handlers/whatsapp-webhook.handler";
 import { ApplicationError } from "./shared/errors/application.error";
@@ -15,7 +14,6 @@ export const NewApp = (dependencies: ApplicationDependencies): Hono => {
       status: "running",
       docs: {
         health: "GET /health",
-        chat: "POST /chat",
         whatsAppWebhook: [
           "POST /webhooks/twilio/whatsapp/message",
           "POST /webhooks/twilio/whatsapp/status",
@@ -25,12 +23,6 @@ export const NewApp = (dependencies: ApplicationDependencies): Hono => {
   });
 
   app.route("/", NewHealthHandler(dependencies.healthService));
-  app.route(
-    "/",
-    NewChatHandler({
-      chatService: dependencies.chatService,
-    }),
-  );
   app.route(
     "/",
     NewWhatsAppWebhookHandler({

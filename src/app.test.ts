@@ -82,33 +82,18 @@ describe("application", () => {
     expect(body.status).toBe("ok");
   });
 
-  it("runs the chat endpoint", async () => {
+  it("does not expose the chat endpoint", async () => {
     const app = NewApp(createFakeDependencies());
 
     const response = await app.request("/chat", {
       method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        messages: [
-          {
-            role: "user",
-            content: "Que horas sao?",
-          },
-        ],
-      }),
     });
+    const body = (await response.json()) as { error: string };
 
-    const body = await response.json();
-    const parsedBody = body as {
-      tools: Array<{
-        toolName: string;
-      }>;
-    };
-
-    expect(response.status).toBe(200);
-    expect(parsedBody.tools[0]?.toolName).toBe("getCurrentDateTime");
+    expect(response.status).toBe(404);
+    expect(body).toEqual({
+      error: "Rota nao encontrada.",
+    });
   });
 
   it("does not expose the Twilio WhatsApp message webhook over GET", async () => {

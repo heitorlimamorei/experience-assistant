@@ -4,7 +4,7 @@ import { NewOpenAIModelFactory } from "../resources/ai/connectors/openai-model.f
 import { NewCurrentDateTimeTool } from "../resources/ai/tools/current-date-time.tool";
 import { NewSystemClock } from "../resources/ai/tools/system.clock";
 import { NewInMemoryWhatsAppChatStore } from "../resources/whatsapp/in-memory-whatsapp-chat-store";
-import { NewMetaWhatsAppClient } from "../resources/whatsapp/connectors/meta-whatsapp.client";
+import { NewTwilioWhatsAppClient } from "../resources/whatsapp/connectors/twilio-whatsapp.client";
 import { NewChatService, type ChatService } from "../services/chat.service";
 import { NewHealthService, type HealthReader } from "../services/health.service";
 import {
@@ -25,7 +25,7 @@ export const NewContainer = (): ApplicationDependencies => {
   const currentDateTimeTool = NewCurrentDateTimeTool({
     clock: NewSystemClock(),
   }).tool;
-  const whatsAppMessageSender = NewMetaWhatsAppClient({ config });
+  const whatsAppMessageSender = NewTwilioWhatsAppClient({ config });
   const whatsAppChatStore = NewInMemoryWhatsAppChatStore();
   const exampleAgent = NewExampleAgent({
     config,
@@ -39,7 +39,6 @@ export const NewContainer = (): ApplicationDependencies => {
     healthService: NewHealthService({ config }),
     chatService,
     whatsAppWebhookService: NewWhatsAppWebhookService({
-      config,
       chatService,
       whatsAppMessageSender,
       whatsAppChatStore,

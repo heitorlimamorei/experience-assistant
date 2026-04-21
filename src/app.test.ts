@@ -49,7 +49,7 @@ const createFakeDependencies = (): ApplicationDependencies => {
     port: 3000,
     openaiModel: "gpt-5.4-mini",
     openaiAgentMaxSteps: 5,
-    metaGraphApiVersion: "v23.0",
+    twilioWebhookValidateSignature: false,
   };
 
   return {
@@ -62,12 +62,10 @@ const createFakeDependencies = (): ApplicationDependencies => {
 
 const NewFakeWhatsAppWebhookService = (): WhatsAppWebhookService => {
   return {
-    verifyWebhook: (query) => {
-      return query["hub.challenge"] || "";
-    },
-    handleIncomingWebhook: async () => {
+    handleIncomingMessage: async () => {
       return 1;
     },
+    handleStatusCallback: async () => {},
   };
 };
 
@@ -113,83 +111,94 @@ describe("application", () => {
     expect(parsedBody.tools[0]?.toolName).toBe("getCurrentDateTime");
   });
 
-  it("verifies the WhatsApp webhook", async () => {
+  it("describes the Twilio WhatsApp message webhook route", async () => {
     const app = NewApp(createFakeDependencies());
 
-    const response = await app.request(
-      "/webhooks/meta/whatsapp?hub.mode=subscribe&hub.verify_token=test&hub.challenge=abc123",
-    );
-
-    expect(response.status).toBe(200);
-    expect(await response.text()).toBe("abc123");
-  });
-
-  it("describes the WhatsApp webhook route when opened without Meta query params", async () => {
-    const app = NewApp(createFakeDependencies());
-
-    const response = await app.request("/webhooks/meta/whatsapp");
+    const response = await app.request("/webhooks/twilio/whatsapp/message");
     const body = (await response.json()) as {
       ok: boolean;
       route: string;
       methods: string[];
-      verification: {
-        mode: string;
-        verifyTokenQueryParam: string;
-        challengeQueryParam: string;
-      };
+      provider: string;
+      contentType: string;
+      respondsWith: string;
     };
 
     expect(response.status).toBe(200);
     expect(body).toEqual({
       ok: true,
-      route: "/webhooks/meta/whatsapp",
+      route: "/webhooks/twilio/whatsapp/message",
       methods: ["GET", "POST"],
-      verification: {
-        mode: "subscribe",
-        verifyTokenQueryParam: "hub.verify_token",
-        challengeQueryParam: "hub.challenge",
-      },
+      provider: "twilio",
+      contentType: "application/x-www-form-urlencoded",
+      respondsWith: "text/xml",
     });
   });
 
-  it("accepts WhatsApp webhook payloads", async () => {
+  it("describes the Twilio WhatsApp status webhook route", async () => {
     const app = NewApp(createFakeDependencies());
 
-    const response = await app.request("/webhooks/meta/whatsapp", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        object: "whatsapp_business_account",
-        entry: [
-          {
-            changes: [
-              {
-                value: {
-                  messages: [
-                    {
-                      id: "wamid.message",
-                      from: "5511999999999",
-                      type: "text",
-                      text: {
-                        body: "Oi",
-                      },
-                    },
-                  ],
-                },
-              },
-            ],
-          },
-        ],
-      }),
-    });
-
+    const response = await app.request("/webhooks/twilio/whatsapp/status");
     const body = (await response.json()) as {
-      received: boolean;
+      ok: boolean;
+      route: string;
+      methods: string[];
+      provider: string;
+      contentType: string;
+      respondsWith: string;
     };
 
     expect(response.status).toBe(200);
-    expect(body.received).toBe(true);
+    expect(body).toEqual({
+      ok: true,
+      route: "/webhooks/twilio/whatsapp/status",
+      methods: ["GET", "POST"],
+      provider: "twilio",
+      contentType: "application/x-www-form-urlencoded",
+      respondsWith: "204/200 sem body",
+    });
+  });
+
+  it("accepts Twilio WhatsApp inbound message payloads", async () => {
+    const app = NewApp(createFakeDependencies());
+
+    const response = await app.request("/webhooks/twilio/whatsapp/message", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        MessageSid: "SM123",
+        From: "whatsapp:+5511999999999",
+        To: "whatsapp:+14155238886",
+        WaId: "5511999999999",
+        ProfileName: "Heitor",
+        Body: "Oi",
+        NumMedia: "0",
+      }).toString(),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("<?xml version=\"1.0\" encoding=\"UTF-8\"?><Response/>");
+  });
+
+  it("accepts Twilio WhatsApp status callback payloads", async () => {
+    const app = NewApp(createFakeDependencies());
+
+    const response = await app.request("/webhooks/twilio/whatsapp/status", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/x-www-form-urlencoded",
+      },
+      body: new URLSearchParams({
+        MessageSid: "SM123",
+        MessageStatus: "delivered",
+        From: "whatsapp:+14155238886",
+        To: "whatsapp:+5511999999999",
+      }).toString(),
+    });
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("");
   });
 });

@@ -1,69 +1,44 @@
 import { z } from "zod";
 
-export const whatsAppWebhookVerificationQuerySchema = z.object({
-  "hub.mode": z.string().optional(),
-  "hub.verify_token": z.string().optional(),
-  "hub.challenge": z.string().optional(),
-});
+const optionalTrimmedString = z.preprocess((value) => {
+  if (typeof value !== "string") {
+    return value;
+  }
 
-const whatsAppWebhookMessageSchema = z
+  const trimmedValue = value.trim();
+
+  return trimmedValue.length > 0 ? trimmedValue : undefined;
+}, z.string().optional());
+
+export const twilioIncomingWhatsAppWebhookPayloadSchema = z
   .object({
-    id: z.string(),
-    from: z.string(),
-    type: z.string(),
-    text: z
-      .object({
-        body: z.string().trim().min(1),
-      })
-      .optional(),
+    MessageSid: z.string().trim().min(1),
+    From: z.string().trim().min(1),
+    To: z.string().trim().min(1),
+    Body: optionalTrimmedString,
+    WaId: optionalTrimmedString,
+    ProfileName: optionalTrimmedString,
+    NumMedia: optionalTrimmedString,
+    SmsStatus: optionalTrimmedString,
   })
   .passthrough();
 
-export const whatsAppWebhookPayloadSchema = z
+export const twilioWhatsAppStatusCallbackPayloadSchema = z
   .object({
-    object: z.literal("whatsapp_business_account"),
-    entry: z.array(
-      z
-        .object({
-          changes: z.array(
-            z
-              .object({
-                value: z
-                  .object({
-                    contacts: z
-                      .array(
-                        z
-                          .object({
-                            wa_id: z.string().optional(),
-                            profile: z
-                              .object({
-                                name: z.string().optional(),
-                              })
-                              .optional(),
-                          })
-                          .passthrough(),
-                      )
-                      .optional(),
-                    messages: z.array(whatsAppWebhookMessageSchema).optional(),
-                    metadata: z
-                      .object({
-                        display_phone_number: z.string().optional(),
-                        phone_number_id: z.string().optional(),
-                      })
-                      .passthrough()
-                      .optional(),
-                  })
-                  .passthrough(),
-              })
-              .passthrough(),
-          ),
-        })
-        .passthrough(),
-    ),
+    MessageSid: z.string().trim().min(1),
+    MessageStatus: z.string().trim().min(1),
+    ErrorCode: optionalTrimmedString,
+    From: optionalTrimmedString,
+    To: optionalTrimmedString,
+    ChannelStatusMessage: optionalTrimmedString,
+    SmsSid: optionalTrimmedString,
+    SmsStatus: optionalTrimmedString,
   })
   .passthrough();
 
-export type WhatsAppWebhookVerificationQuery = z.infer<
-  typeof whatsAppWebhookVerificationQuerySchema
+export type TwilioIncomingWhatsAppWebhookPayload = z.infer<
+  typeof twilioIncomingWhatsAppWebhookPayloadSchema
 >;
-export type WhatsAppWebhookPayload = z.infer<typeof whatsAppWebhookPayloadSchema>;
+export type TwilioWhatsAppStatusCallbackPayload = z.infer<
+  typeof twilioWhatsAppStatusCallbackPayloadSchema
+>;

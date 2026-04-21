@@ -1,21 +1,22 @@
 import type { ChatService } from "./chat.service";
-import type { AppConfig } from "../config/config";
 import type {
-  WhatsAppWebhookPayload,
-  WhatsAppWebhookVerificationQuery,
+  TwilioIncomingWhatsAppWebhookPayload,
+  TwilioWhatsAppStatusCallbackPayload,
 } from "../dtos/whatsapp-webhook.dto";
 import type { ChatMessageDTO } from "../dtos/chat.dto";
 import type { WhatsAppChatStore } from "../resources/whatsapp/in-memory-whatsapp-chat-store";
-import type { WhatsAppMessageSender } from "../resources/whatsapp/connectors/meta-whatsapp.client";
-import { ApplicationError } from "../shared/errors/application.error";
+import type { WhatsAppMessageSender } from "../resources/whatsapp/connectors/twilio-whatsapp.client";
 
 export interface WhatsAppWebhookService {
-  verifyWebhook(query: WhatsAppWebhookVerificationQuery): string;
-  handleIncomingWebhook(payload: WhatsAppWebhookPayload): Promise<number>;
+  handleIncomingMessage(
+    payload: TwilioIncomingWhatsAppWebhookPayload,
+  ): Promise<number>;
+  handleStatusCallback(
+    payload: TwilioWhatsAppStatusCallbackPayload,
+  ): Promise<void>;
 }
 
 export interface WhatsAppWebhookServiceDependencies {
-  config: AppConfig;
   chatService: ChatService;
   whatsAppMessageSender: WhatsAppMessageSender;
   whatsAppChatStore: WhatsAppChatStore;
@@ -28,156 +29,93 @@ interface InboundTextMessage {
   profileName?: string;
 }
 
-interface GroupedInboundTextMessages {
-  from: string;
-  latestMessageId: string;
-  profileName?: string;
-  messages: InboundTextMessage[];
-}
-
 export const NewWhatsAppWebhookService = ({
-  config,
   chatService,
   whatsAppMessageSender,
   whatsAppChatStore,
 }: WhatsAppWebhookServiceDependencies): WhatsAppWebhookService => {
-  const verifyWebhook = (query: WhatsAppWebhookVerificationQuery): string => {
-    const mode = query["hub.mode"];
-    const verifyToken = query["hub.verify_token"];
-    const challenge = query["hub.challenge"];
+  const handleIncomingMessage = async (
+    payload: TwilioIncomingWhatsAppWebhookPayload,
+  ): Promise<number> => {
+    const inboundMessage = extractInboundTextMessage(payload);
 
-    if (!config.metaWebhookVerifyToken) {
-      throw new ApplicationError(
-        503,
-        "META_WEBHOOK_VERIFY_TOKEN nao foi configurado.",
-      );
+    if (!inboundMessage) {
+      return 0;
     }
 
-    if (
-      mode !== "subscribe" ||
-      verifyToken !== config.metaWebhookVerifyToken ||
-      !challenge
-    ) {
-      throw new ApplicationError(403, "Falha na verificacao do webhook da Meta.");
+    const appendedMessages = whatsAppChatStore.appendInboundMessages({
+      senderId: inboundMessage.from,
+      messages: [
+        {
+          messageId: inboundMessage.messageId,
+          text: inboundMessage.text,
+        },
+      ],
+    });
+
+    if (appendedMessages.length === 0) {
+      return 0;
     }
 
-    return challenge;
+    const response = await chatService.run({
+      messages: buildChatMessages({
+        profileName: inboundMessage.profileName,
+        history: whatsAppChatStore.getMessages(inboundMessage.from),
+      }),
+    });
+    const responseText = response.text.trim();
+
+    if (!responseText) {
+      return appendedMessages.length;
+    }
+
+    whatsAppChatStore.appendAssistantMessage({
+      senderId: inboundMessage.from,
+      text: responseText,
+    });
+
+    await whatsAppMessageSender.sendTextMessage({
+      to: inboundMessage.from,
+      text: responseText,
+    });
+
+    return appendedMessages.length;
   };
 
-  const handleIncomingWebhook = async (
-    payload: WhatsAppWebhookPayload,
-  ): Promise<number> => {
-    const inboundMessages = extractInboundTextMessages(payload);
-    const groupedMessages = groupInboundMessagesBySender(inboundMessages);
-    let processedMessagesCount = 0;
-
-    for (const inboundMessageGroup of groupedMessages) {
-      const appendedMessages = whatsAppChatStore.appendInboundMessages({
-        senderId: inboundMessageGroup.from,
-        messages: inboundMessageGroup.messages.map((message) => ({
-          messageId: message.messageId,
-          text: message.text,
-        })),
-      });
-
-      if (appendedMessages.length === 0) {
-        continue;
-      }
-
-      const response = await chatService.run({
-        messages: buildChatMessages({
-          profileName: inboundMessageGroup.profileName,
-          history: whatsAppChatStore.getMessages(inboundMessageGroup.from),
-        }),
-      });
-
-      const responseText = response.text.trim();
-      processedMessagesCount += appendedMessages.length;
-
-      if (!responseText) {
-        continue;
-      }
-
-      whatsAppChatStore.appendAssistantMessage({
-        senderId: inboundMessageGroup.from,
-        text: responseText,
-      });
-
-      await whatsAppMessageSender.sendTextMessage({
-        to: inboundMessageGroup.from,
-        text: responseText,
-        replyToMessageId: inboundMessageGroup.latestMessageId,
-      });
-    }
-
-    return processedMessagesCount;
+  const handleStatusCallback = async (
+    payload: TwilioWhatsAppStatusCallbackPayload,
+  ): Promise<void> => {
+    console.info("[twilio-whatsapp-status] outbound status update", {
+      messageSid: payload.MessageSid,
+      messageStatus: payload.MessageStatus,
+      errorCode: payload.ErrorCode,
+      from: payload.From,
+      to: payload.To,
+      channelStatusMessage: payload.ChannelStatusMessage,
+    });
   };
 
   return {
-    verifyWebhook,
-    handleIncomingWebhook,
+    handleIncomingMessage,
+    handleStatusCallback,
   };
 };
 
-const extractInboundTextMessages = (
-  payload: WhatsAppWebhookPayload,
-): InboundTextMessage[] => {
-  const messages: InboundTextMessage[] = [];
+const extractInboundTextMessage = (
+  payload: TwilioIncomingWhatsAppWebhookPayload,
+): InboundTextMessage | undefined => {
+  const text = payload.Body?.trim();
 
-  for (const entry of payload.entry) {
-    for (const change of entry.changes) {
-      const contactsByWaId = new Map(
-        (change.value.contacts || [])
-          .filter((contact) => contact.wa_id)
-          .map((contact) => [contact.wa_id as string, contact.profile?.name]),
-      );
-
-      for (const message of change.value.messages || []) {
-        if (message.type !== "text" || !message.text?.body?.trim()) {
-          continue;
-        }
-
-        messages.push({
-          from: message.from,
-          messageId: message.id,
-          text: message.text.body.trim(),
-          profileName: contactsByWaId.get(message.from),
-        });
-      }
-    }
+  if (!text) {
+    return undefined;
   }
 
-  return messages;
-};
-
-const groupInboundMessagesBySender = (
-  messages: InboundTextMessage[],
-): GroupedInboundTextMessages[] => {
-  const groupedMessagesBySender = new Map<string, GroupedInboundTextMessages>();
-
-  for (const message of messages) {
-    const existingGroup = groupedMessagesBySender.get(message.from);
-
-    if (existingGroup) {
-      existingGroup.messages.push(message);
-      existingGroup.latestMessageId = message.messageId;
-
-      if (!existingGroup.profileName && message.profileName) {
-        existingGroup.profileName = message.profileName;
-      }
-
-      continue;
-    }
-
-    groupedMessagesBySender.set(message.from, {
-      from: message.from,
-      latestMessageId: message.messageId,
-      profileName: message.profileName,
-      messages: [message],
-    });
-  }
-
-  return [...groupedMessagesBySender.values()];
+  return {
+    from: payload.WaId || normalizeSenderId(payload.From),
+    messageId: payload.MessageSid,
+    text,
+    profileName: payload.ProfileName,
+  };
 };
 
 const buildChatMessages = ({
@@ -199,4 +137,12 @@ const buildChatMessages = ({
   messages.push(...history);
 
   return messages;
+};
+
+const normalizeSenderId = (from: string): string => {
+  const withoutPrefix = from.startsWith("whatsapp:")
+    ? from.slice("whatsapp:".length)
+    : from;
+
+  return withoutPrefix.replace(/\D/g, "");
 };

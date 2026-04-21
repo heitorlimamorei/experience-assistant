@@ -1,6 +1,6 @@
 # Experience Assistant API
 
-API em Bun + TypeScript usando Hono e Vercel AI SDK com OpenAI como provider do agente. A aplicacao expoe `/chat` e um webhook da Meta para WhatsApp.
+API em Bun + TypeScript usando Hono e Vercel AI SDK com OpenAI como provider do agente. A aplicacao expoe `/chat` e webhooks da Twilio para WhatsApp.
 
 ## Stack
 
@@ -41,8 +41,10 @@ bun run dev
 
 - `GET /health`
 - `POST /chat`
-- `GET /webhooks/meta/whatsapp`
-- `POST /webhooks/meta/whatsapp`
+- `GET /webhooks/twilio/whatsapp/message`
+- `POST /webhooks/twilio/whatsapp/message`
+- `GET /webhooks/twilio/whatsapp/status`
+- `POST /webhooks/twilio/whatsapp/status`
 
 ## Exemplos
 
@@ -63,21 +65,28 @@ curl -X POST http://localhost:3000/chat \
   }'
 ```
 
-## Webhook Meta WhatsApp
+## Webhooks Twilio WhatsApp
 
-Configure na Meta a URL publica:
+Configure na Twilio as URLs publicas:
 
 ```text
-GET/POST https://seu-dominio.com/webhooks/meta/whatsapp
+Incoming Message webhook:
+POST https://seu-dominio.com/webhooks/twilio/whatsapp/message
+
+Status Callback webhook:
+POST https://seu-dominio.com/webhooks/twilio/whatsapp/status
 ```
 
 Variaveis necessarias:
 
 ```bash
-META_WEBHOOK_VERIFY_TOKEN=seu-token-de-verificacao
-META_WHATSAPP_ACCESS_TOKEN=token-da-cloud-api
-META_WHATSAPP_PHONE_NUMBER_ID=id-do-numero
-META_GRAPH_API_VERSION=v23.0
+APP_BASE_URL=https://seu-dominio.com
+TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+TWILIO_AUTH_TOKEN=seu-auth-token
+TWILIO_WHATSAPP_FROM=whatsapp:+14155238886
+TWILIO_WEBHOOK_VALIDATE_SIGNATURE=true
 ```
 
-O `GET` faz o handshake do webhook com a Meta. O `POST` recebe mensagens de texto, chama o agente atual e envia a resposta de volta para o numero do usuario via WhatsApp Cloud API.
+O webhook de `message` recebe `application/x-www-form-urlencoded` da Twilio, valida a assinatura `X-Twilio-Signature`, extrai `Body`, `WaId`, `ProfileName` e chama o agente atual. A resposta para o usuario e enviada via Twilio usando `Body`, e nao `contentSid`, para manter o fluxo flexivel dentro da janela de atendimento.
+
+O webhook de `status` recebe as mudancas de estado de mensagens outbound, como `queued`, `sent`, `delivered`, `undelivered`, `failed` e `read`.

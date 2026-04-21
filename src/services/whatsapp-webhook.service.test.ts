@@ -6,7 +6,7 @@ import { NewInMemoryWhatsAppChatStore } from "../resources/whatsapp/in-memory-wh
 import type {
   SendWhatsAppTextMessageInput,
   WhatsAppMessageSender,
-} from "../resources/whatsapp/connectors/meta-whatsapp.client";
+} from "../resources/whatsapp/connectors/twilio-whatsapp.client";
 import type { ChatService } from "./chat.service";
 import { NewWhatsAppWebhookService } from "./whatsapp-webhook.service";
 
@@ -15,11 +15,11 @@ const config: AppConfig = {
   port: 3000,
   openaiModel: "gpt-5.4-mini",
   openaiAgentMaxSteps: 5,
-  metaGraphApiVersion: "v23.0",
+  twilioWebhookValidateSignature: false,
 };
 
 describe("whatsapp webhook service", () => {
-  it("groups inbound messages by sender and persists the conversation in memory", async () => {
+  it("processes an inbound Twilio WhatsApp message and persists the conversation in memory", async () => {
     const chatRequests: ChatRequestDTO[] = [];
     const sentMessages: SendWhatsAppTextMessageInput[] = [];
     const whatsAppChatStore = NewInMemoryWhatsAppChatStore();
@@ -44,50 +44,19 @@ describe("whatsapp webhook service", () => {
     };
 
     const service = NewWhatsAppWebhookService({
-      config,
       chatService,
       whatsAppMessageSender,
       whatsAppChatStore,
     });
 
-    await service.handleIncomingWebhook({
-      object: "whatsapp_business_account",
-      entry: [
-        {
-          changes: [
-            {
-              value: {
-                contacts: [
-                  {
-                    wa_id: "5511999999999",
-                    profile: {
-                      name: "Heitor",
-                    },
-                  },
-                ],
-                messages: [
-                  {
-                    id: "wamid-1",
-                    from: "5511999999999",
-                    type: "text",
-                    text: {
-                      body: "Oi",
-                    },
-                  },
-                  {
-                    id: "wamid-2",
-                    from: "5511999999999",
-                    type: "text",
-                    text: {
-                      body: "Quero ajuda com a viagem",
-                    },
-                  },
-                ],
-              },
-            },
-          ],
-        },
-      ],
+    await service.handleIncomingMessage({
+      MessageSid: "SM-1",
+      From: "whatsapp:+5511999999999",
+      To: "whatsapp:+14155238886",
+      WaId: "5511999999999",
+      ProfileName: "Heitor",
+      Body: "Quero ajuda com a viagem",
+      NumMedia: "0",
     });
 
     expect(chatRequests).toHaveLength(1);
@@ -98,10 +67,6 @@ describe("whatsapp webhook service", () => {
       },
       {
         role: "user",
-        content: "Oi",
-      },
-      {
-        role: "user",
         content: "Quero ajuda com a viagem",
       },
     ]);
@@ -109,14 +74,9 @@ describe("whatsapp webhook service", () => {
       {
         to: "5511999999999",
         text: "Resposta consolidada.",
-        replyToMessageId: "wamid-2",
       },
     ]);
     expect(whatsAppChatStore.getMessages("5511999999999")).toEqual([
-      {
-        role: "user",
-        content: "Oi",
-      },
       {
         role: "user",
         content: "Quero ajuda com a viagem",
@@ -153,66 +113,33 @@ describe("whatsapp webhook service", () => {
     };
 
     const service = NewWhatsAppWebhookService({
-      config,
       chatService,
       whatsAppMessageSender,
       whatsAppChatStore,
     });
 
-    await service.handleIncomingWebhook({
-      object: "whatsapp_business_account",
-      entry: [
-        {
-          changes: [
-            {
-              value: {
-                messages: [
-                  {
-                    id: "wamid-1",
-                    from: "5511999999999",
-                    type: "text",
-                    text: {
-                      body: "Primeira mensagem",
-                    },
-                  },
-                ],
-              },
-            },
-          ],
-        },
-      ],
+    await service.handleIncomingMessage({
+      MessageSid: "SM-1",
+      From: "whatsapp:+5511999999999",
+      To: "whatsapp:+14155238886",
+      WaId: "5511999999999",
+      Body: "Primeira mensagem",
     });
 
-    await service.handleIncomingWebhook({
-      object: "whatsapp_business_account",
-      entry: [
-        {
-          changes: [
-            {
-              value: {
-                messages: [
-                  {
-                    id: "wamid-1",
-                    from: "5511999999999",
-                    type: "text",
-                    text: {
-                      body: "Primeira mensagem",
-                    },
-                  },
-                  {
-                    id: "wamid-2",
-                    from: "5511999999999",
-                    type: "text",
-                    text: {
-                      body: "Segunda mensagem",
-                    },
-                  },
-                ],
-              },
-            },
-          ],
-        },
-      ],
+    await service.handleIncomingMessage({
+      MessageSid: "SM-1",
+      From: "whatsapp:+5511999999999",
+      To: "whatsapp:+14155238886",
+      WaId: "5511999999999",
+      Body: "Primeira mensagem",
+    });
+
+    await service.handleIncomingMessage({
+      MessageSid: "SM-2",
+      From: "whatsapp:+5511999999999",
+      To: "whatsapp:+14155238886",
+      WaId: "5511999999999",
+      Body: "Segunda mensagem",
     });
 
     expect(chatRequests).toHaveLength(2);
@@ -234,17 +161,15 @@ describe("whatsapp webhook service", () => {
       {
         to: "5511999999999",
         text: "Resposta 1",
-        replyToMessageId: "wamid-1",
       },
       {
         to: "5511999999999",
         text: "Resposta 2",
-        replyToMessageId: "wamid-2",
       },
     ]);
   });
 
-  it("ignores webhook payloads that only contain delivery statuses", async () => {
+  it("ignores inbound webhook payloads without text body", async () => {
     const chatRequests: ChatRequestDTO[] = [];
     const sentMessages: SendWhatsAppTextMessageInput[] = [];
     const whatsAppChatStore = NewInMemoryWhatsAppChatStore();
@@ -269,37 +194,56 @@ describe("whatsapp webhook service", () => {
     };
 
     const service = NewWhatsAppWebhookService({
-      config,
       chatService,
       whatsAppMessageSender,
       whatsAppChatStore,
     });
 
-    const processedMessagesCount = await service.handleIncomingWebhook({
-      object: "whatsapp_business_account",
-      entry: [
-        {
-          changes: [
-            {
-              value: {
-                metadata: {
-                  phone_number_id: "1125733920617385",
-                },
-                statuses: [
-                  {
-                    id: "wamid-1",
-                    status: "failed",
-                  },
-                ],
-              },
-            },
-          ],
-        },
-      ],
+    const processedMessagesCount = await service.handleIncomingMessage({
+      MessageSid: "SM-3",
+      From: "whatsapp:+5511999999999",
+      To: "whatsapp:+14155238886",
+      WaId: "5511999999999",
+      Body: "",
+      NumMedia: "1",
     });
 
     expect(processedMessagesCount).toBe(0);
     expect(chatRequests).toHaveLength(0);
     expect(sentMessages).toHaveLength(0);
+  });
+
+  it("accepts Twilio status callbacks without affecting the conversation history", async () => {
+    const whatsAppChatStore = NewInMemoryWhatsAppChatStore();
+
+    const chatService: ChatService = {
+      run: async (): Promise<ChatResponseDTO> => {
+        return {
+          text: "Nao deveria ser chamado.",
+          model: "gpt-5.4-mini",
+          steps: 1,
+          tools: [],
+        };
+      },
+    };
+
+    const whatsAppMessageSender: WhatsAppMessageSender = {
+      sendTextMessage: async () => {},
+    };
+
+    const service = NewWhatsAppWebhookService({
+      chatService,
+      whatsAppMessageSender,
+      whatsAppChatStore,
+    });
+
+    await service.handleStatusCallback({
+      MessageSid: "SM-4",
+      MessageStatus: "delivered",
+      From: "whatsapp:+14155238886",
+      To: "whatsapp:+5511999999999",
+    });
+
+    expect(whatsAppChatStore.getMessages("5511999999999")).toEqual([]);
   });
 });

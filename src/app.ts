@@ -17,8 +17,10 @@ export const NewApp = (dependencies: ApplicationDependencies): Hono => {
         health: "GET /health",
         chat: "POST /chat",
         whatsAppWebhook: [
-          "GET /webhooks/meta/whatsapp",
-          "POST /webhooks/meta/whatsapp",
+          "GET /webhooks/twilio/whatsapp/message",
+          "POST /webhooks/twilio/whatsapp/message",
+          "GET /webhooks/twilio/whatsapp/status",
+          "POST /webhooks/twilio/whatsapp/status",
         ],
       },
     });
@@ -34,6 +36,7 @@ export const NewApp = (dependencies: ApplicationDependencies): Hono => {
   app.route(
     "/",
     NewWhatsAppWebhookHandler({
+      config: dependencies.config,
       whatsAppWebhookService: dependencies.whatsAppWebhookService,
     }),
   );

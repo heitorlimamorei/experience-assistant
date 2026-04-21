@@ -3,13 +3,14 @@ import { z } from "zod";
 export interface AppConfig {
   appName: string;
   port: number;
+  appBaseUrl?: string;
   openaiApiKey?: string;
   openaiModel: string;
   openaiAgentMaxSteps: number;
-  metaWebhookVerifyToken?: string;
-  metaWhatsAppAccessToken?: string;
-  metaWhatsAppPhoneNumberId?: string;
-  metaGraphApiVersion: string;
+  twilioAccountSid?: string;
+  twilioAuthToken?: string;
+  twilioWhatsAppFrom?: string;
+  twilioWebhookValidateSignature: boolean;
 }
 
 export interface EnvironmentConfigDependencies {
@@ -18,13 +19,18 @@ export interface EnvironmentConfigDependencies {
 
 const configSchema = z.object({
   PORT: z.coerce.number().int().min(1).max(65535).default(3000),
+  APP_BASE_URL: z.string().trim().url().optional(),
   OPENAI_API_KEY: z.string().trim().optional(),
   OPENAI_MODEL: z.string().trim().default("gpt-5.4-mini"),
   OPENAI_AGENT_MAX_STEPS: z.coerce.number().int().min(1).max(20).default(5),
-  META_WEBHOOK_VERIFY_TOKEN: z.string().trim().optional(),
-  META_WHATSAPP_ACCESS_TOKEN: z.string().trim().optional(),
-  META_WHATSAPP_PHONE_NUMBER_ID: z.string().trim().optional(),
-  META_GRAPH_API_VERSION: z.string().trim().default("v23.0"),
+  TWILIO_ACCOUNT_SID: z.string().trim().optional(),
+  TWILIO_AUTH_TOKEN: z.string().trim().optional(),
+  TWILIO_WHATSAPP_FROM: z.string().trim().optional(),
+  TWILIO_WEBHOOK_VALIDATE_SIGNATURE: z
+    .string()
+    .trim()
+    .default("true")
+    .transform((value) => value.toLowerCase() !== "false"),
 });
 
 export const NewEnvironmentConfig = (
@@ -32,26 +38,28 @@ export const NewEnvironmentConfig = (
 ): AppConfig => {
   const parsedConfig = configSchema.parse({
     PORT: env.PORT,
+    APP_BASE_URL: env.APP_BASE_URL,
     OPENAI_API_KEY: env.OPENAI_API_KEY,
     OPENAI_MODEL: env.OPENAI_MODEL,
     OPENAI_AGENT_MAX_STEPS: env.OPENAI_AGENT_MAX_STEPS,
-    META_WEBHOOK_VERIFY_TOKEN: env.META_WEBHOOK_VERIFY_TOKEN,
-    META_WHATSAPP_ACCESS_TOKEN: env.META_WHATSAPP_ACCESS_TOKEN,
-    META_WHATSAPP_PHONE_NUMBER_ID: env.META_WHATSAPP_PHONE_NUMBER_ID,
-    META_GRAPH_API_VERSION: env.META_GRAPH_API_VERSION,
+    TWILIO_ACCOUNT_SID: env.TWILIO_ACCOUNT_SID,
+    TWILIO_AUTH_TOKEN: env.TWILIO_AUTH_TOKEN,
+    TWILIO_WHATSAPP_FROM: env.TWILIO_WHATSAPP_FROM,
+    TWILIO_WEBHOOK_VALIDATE_SIGNATURE:
+      env.TWILIO_WEBHOOK_VALIDATE_SIGNATURE,
   });
 
   return {
     appName: "experience-assistant",
     port: parsedConfig.PORT,
+    appBaseUrl: parsedConfig.APP_BASE_URL || undefined,
     openaiApiKey: parsedConfig.OPENAI_API_KEY || undefined,
     openaiModel: parsedConfig.OPENAI_MODEL,
     openaiAgentMaxSteps: parsedConfig.OPENAI_AGENT_MAX_STEPS,
-    metaWebhookVerifyToken: parsedConfig.META_WEBHOOK_VERIFY_TOKEN || undefined,
-    metaWhatsAppAccessToken:
-      parsedConfig.META_WHATSAPP_ACCESS_TOKEN || undefined,
-    metaWhatsAppPhoneNumberId:
-      parsedConfig.META_WHATSAPP_PHONE_NUMBER_ID || undefined,
-    metaGraphApiVersion: parsedConfig.META_GRAPH_API_VERSION,
+    twilioAccountSid: parsedConfig.TWILIO_ACCOUNT_SID || undefined,
+    twilioAuthToken: parsedConfig.TWILIO_AUTH_TOKEN || undefined,
+    twilioWhatsAppFrom: parsedConfig.TWILIO_WHATSAPP_FROM || undefined,
+    twilioWebhookValidateSignature:
+      parsedConfig.TWILIO_WEBHOOK_VALIDATE_SIGNATURE,
   };
 };

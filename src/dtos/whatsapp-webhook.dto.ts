@@ -12,13 +12,21 @@ const optionalTrimmedString = z.preprocess((value) => {
 
 export const twilioIncomingWhatsAppWebhookPayloadSchema = z
   .object({
+    // Unique message identifier received from Twilio.
     MessageSid: z.string().trim().min(1),
+    // Origin address on the WhatsApp channel, usually in the `whatsapp:+5511...` format.
     From: z.string().trim().min(1),
+    // Destination address on the WhatsApp channel, usually your Twilio sender number.
     To: z.string().trim().min(1),
+    // Text content sent by the user.
     Body: optionalTrimmedString,
+    // Sender WhatsApp ID, typically the phone number in numeric format without `whatsapp:`.
     WaId: optionalTrimmedString,
+    // User profile name on WhatsApp, when provided by the platform.
     ProfileName: optionalTrimmedString,
+    // Number of media attachments sent with the message.
     NumMedia: optionalTrimmedString,
+    // Raw status value sent by Twilio with the message webhook.
     SmsStatus: optionalTrimmedString,
   })
   .passthrough();

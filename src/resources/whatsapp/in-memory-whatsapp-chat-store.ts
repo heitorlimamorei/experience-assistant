@@ -13,12 +13,19 @@ export interface AppendAssistantWhatsAppMessageInput {
   text: string;
 }
 
+export interface ClearWhatsAppConversationOutput {
+  existed: boolean;
+  removedMessages: number;
+  removedProcessedMessageIds: number;
+}
+
 export interface WhatsAppChatStore {
   getMessages(senderId: string): ChatMessageDTO[];
   appendInboundMessages(
     input: AppendInboundWhatsAppMessagesInput,
   ): ChatMessageDTO[];
   appendAssistantMessage(input: AppendAssistantWhatsAppMessageInput): void;
+  clearConversation(senderId: string): ClearWhatsAppConversationOutput;
 }
 
 interface ConversationState {
@@ -94,9 +101,35 @@ export const NewInMemoryWhatsAppChatStore = (): WhatsAppChatStore => {
     });
   };
 
+  const clearConversation = (
+    senderId: string,
+  ): ClearWhatsAppConversationOutput => {
+    const state = conversations.get(senderId);
+
+    if (!state) {
+      return {
+        existed: false,
+        removedMessages: 0,
+        removedProcessedMessageIds: 0,
+      };
+    }
+
+    const removedMessages = state.messages.length;
+    const removedProcessedMessageIds = state.processedInboundMessageIds.size;
+
+    conversations.delete(senderId);
+
+    return {
+      existed: true,
+      removedMessages,
+      removedProcessedMessageIds,
+    };
+  };
+
   return {
     getMessages,
     appendInboundMessages,
     appendAssistantMessage,
+    clearConversation,
   };
 };

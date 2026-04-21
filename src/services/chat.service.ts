@@ -11,21 +11,32 @@ import type {
 } from "../dtos/chat.dto";
 import type { AppConfig } from "../config/config";
 import type { ExampleAgent } from "../resources/ai/agents/example.agent";
+import { NewFinishWhatsAppChatTool } from "../resources/ai/tools/finish-whatsapp-chat.tool";
+import type { WhatsAppChatStore } from "../resources/whatsapp/in-memory-whatsapp-chat-store";
 
 export interface ChatService {
-  run(input: ChatRequestDTO): Promise<ChatResponseDTO>;
+  run(input: ChatRequestDTO, options?: ChatRunOptions): Promise<ChatResponseDTO>;
 }
 
 export interface ChatServiceDependencies {
   config: AppConfig;
   exampleAgent: ExampleAgent;
+  whatsAppChatStore: WhatsAppChatStore;
+}
+
+export interface ChatRunOptions {
+  senderId?: string;
 }
 
 export const NewChatService = ({
   config,
   exampleAgent,
+  whatsAppChatStore,
 }: ChatServiceDependencies): ChatService => {
-  const run = async (input: ChatRequestDTO): Promise<ChatResponseDTO> => {
+  const run = async (
+    input: ChatRequestDTO,
+    options?: ChatRunOptions,
+  ): Promise<ChatResponseDTO> => {
     const toolTraces: ChatToolTraceDTO[] = [];
     let model = config.openaiModel;
     let steps = 0;
@@ -51,6 +62,14 @@ export const NewChatService = ({
           });
         }
       },
+      options?.senderId
+        ? {
+            finishWhatsAppChatTool: NewFinishWhatsAppChatTool({
+              senderId: options.senderId,
+              whatsAppChatStore,
+            }).tool,
+          }
+        : undefined,
     );
 
     return {

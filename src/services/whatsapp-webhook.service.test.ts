@@ -280,4 +280,66 @@ describe("whatsapp webhook service", () => {
 
     expect(whatsAppChatStore.getMessages("5511999999999")).toEqual([]);
   });
+
+  it("clears the in-memory conversation when the finish chat tool is used", async () => {
+    const whatsAppChatStore = NewInMemoryWhatsAppChatStore();
+    const sentMessages: SendWhatsAppTextMessageInput[] = [];
+
+    const chatService: ChatService = {
+      run: async (_input, options): Promise<ChatResponseDTO> => {
+        whatsAppChatStore.clearConversation(options?.senderId as string);
+
+        return {
+          text: "Conversa encerrada. Quando quiser, podemos recomecar do zero.",
+          model: "gpt-5.4-mini",
+          steps: 1,
+          tools: [
+            {
+              toolName: "finishWhatsAppChat",
+              input: {
+                reason: "user_requested",
+              },
+              output: {
+                ended: true,
+                removedMessages: 3,
+                removedProcessedMessageIds: 2,
+                message: "Conversa encerrada e cache do usuario limpo.",
+              },
+            },
+          ],
+        };
+      },
+    };
+
+    const whatsAppMessageSender: WhatsAppMessageSender = {
+      sendTextMessage: async (input) => {
+        sentMessages.push(input);
+      },
+      readInboundMedia: async () => {
+        throw new Error("Nao deveria ser chamado.");
+      },
+    };
+
+    const service = NewWhatsAppWebhookService({
+      chatService,
+      whatsAppMessageSender,
+      whatsAppChatStore,
+    });
+
+    await service.handleIncomingMessage({
+      MessageSid: "SM-5",
+      From: "whatsapp:+5511999999999",
+      To: "whatsapp:+14155238886",
+      WaId: "5511999999999",
+      Body: "Encerrar atendimento",
+    });
+
+    expect(sentMessages).toEqual([
+      {
+        to: "5511999999999",
+        text: "Conversa encerrada. Quando quiser, podemos recomecar do zero.",
+      },
+    ]);
+    expect(whatsAppChatStore.getMessages("5511999999999")).toEqual([]);
+  });
 });

@@ -4,8 +4,9 @@ import type {
   TwilioWhatsAppStatusCallbackPayload,
 } from "../dtos/whatsapp-webhook.dto";
 import type { ChatMessageContentPartDTO, ChatMessageDTO } from "../dtos/chat.dto";
-import type { WhatsAppChatStore } from "../resources/whatsapp/in-memory-whatsapp-chat-store";
+import type { FinishWhatsAppChatOutput } from "../resources/ai/tools/finish-whatsapp-chat.tool";
 import type { WhatsAppMessageSender } from "../resources/whatsapp/connectors/twilio-whatsapp.client";
+import type { WhatsAppChatStore } from "../resources/whatsapp/in-memory-whatsapp-chat-store";
 
 export interface WhatsAppWebhookService {
   handleIncomingMessage(
@@ -65,17 +66,22 @@ export const NewWhatsAppWebhookService = ({
         profileName: inboundMessage.profileName,
         history: whatsAppChatStore.getMessages(inboundMessage.from),
       }),
+    }, {
+      senderId: inboundMessage.from,
     });
     const responseText = response.text.trim();
+    const endedChat = hasFinishedWhatsAppChat(response.tools);
 
     if (!responseText) {
       return appendedMessages.length;
     }
 
-    whatsAppChatStore.appendAssistantMessage({
-      senderId: inboundMessage.from,
-      text: responseText,
-    });
+    if (!endedChat) {
+      whatsAppChatStore.appendAssistantMessage({
+        senderId: inboundMessage.from,
+        text: responseText,
+      });
+    }
 
     await whatsAppMessageSender.sendTextMessage({
       to: inboundMessage.from,
@@ -102,6 +108,24 @@ export const NewWhatsAppWebhookService = ({
     handleIncomingMessage,
     handleStatusCallback,
   };
+};
+
+const hasFinishedWhatsAppChat = (
+  toolTraces: Array<{
+    toolName: string;
+    output?: unknown;
+  }>,
+): boolean => {
+  return toolTraces.some((toolTrace) => {
+    if (toolTrace.toolName !== "finishWhatsAppChat") {
+      return false;
+    }
+
+    const output =
+      toolTrace.output as Partial<FinishWhatsAppChatOutput> | undefined;
+
+    return output?.ended === true;
+  });
 };
 
 const extractInboundMessage = async (
@@ -230,7 +254,7 @@ const buildChatMessages = ({
 }: {
   profileName?: string;
   history: ChatMessageDTO[];
-}) => {
+}): ChatMessageDTO[] => {
   const messages: ChatMessageDTO[] = [];
 
   if (profileName) {

@@ -3,6 +3,7 @@ import { NewExampleAgent } from "../resources/ai/agents/example.agent";
 import { NewOpenAIModelFactory } from "../resources/ai/connectors/openai-model.factory";
 import { NewCurrentDateTimeTool } from "../resources/ai/tools/current-date-time.tool";
 import { NewSystemClock } from "../resources/ai/tools/system.clock";
+import { NewInMemoryWhatsAppChatStore } from "../resources/whatsapp/in-memory-whatsapp-chat-store";
 import { NewMetaWhatsAppClient } from "../resources/whatsapp/connectors/meta-whatsapp.client";
 import { NewChatService, type ChatService } from "../services/chat.service";
 import { NewHealthService, type HealthReader } from "../services/health.service";
@@ -25,6 +26,7 @@ export const NewContainer = (): ApplicationDependencies => {
     clock: NewSystemClock(),
   }).tool;
   const whatsAppMessageSender = NewMetaWhatsAppClient({ config });
+  const whatsAppChatStore = NewInMemoryWhatsAppChatStore();
   const exampleAgent = NewExampleAgent({
     config,
     modelFactory: openAIModelFactory,
@@ -40,6 +42,7 @@ export const NewContainer = (): ApplicationDependencies => {
       config,
       chatService,
       whatsAppMessageSender,
+      whatsAppChatStore,
     }),
   };
 };

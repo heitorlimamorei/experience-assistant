@@ -4,6 +4,8 @@ import type {
   WhatsAppWebhookPayload,
   WhatsAppWebhookVerificationQuery,
 } from "../dtos/whatsapp-webhook.dto";
+import type { ChatMessageDTO } from "../dtos/chat.dto";
+import type { WhatsAppChatStore } from "../resources/whatsapp/in-memory-whatsapp-chat-store";
 import type { WhatsAppMessageSender } from "../resources/whatsapp/connectors/meta-whatsapp.client";
 import { ApplicationError } from "../shared/errors/application.error";
 
@@ -16,6 +18,7 @@ export interface WhatsAppWebhookServiceDependencies {
   config: AppConfig;
   chatService: ChatService;
   whatsAppMessageSender: WhatsAppMessageSender;
+  whatsAppChatStore: WhatsAppChatStore;
 }
 
 interface InboundTextMessage {
@@ -25,10 +28,18 @@ interface InboundTextMessage {
   profileName?: string;
 }
 
+interface GroupedInboundTextMessages {
+  from: string;
+  latestMessageId: string;
+  profileName?: string;
+  messages: InboundTextMessage[];
+}
+
 export const NewWhatsAppWebhookService = ({
   config,
   chatService,
   whatsAppMessageSender,
+  whatsAppChatStore,
 }: WhatsAppWebhookServiceDependencies): WhatsAppWebhookService => {
   const verifyWebhook = (query: WhatsAppWebhookVerificationQuery): string => {
     const mode = query["hub.mode"];
@@ -57,26 +68,49 @@ export const NewWhatsAppWebhookService = ({
     payload: WhatsAppWebhookPayload,
   ): Promise<number> => {
     const inboundMessages = extractInboundTextMessages(payload);
+    const groupedMessages = groupInboundMessagesBySender(inboundMessages);
+    let processedMessagesCount = 0;
 
-    for (const inboundMessage of inboundMessages) {
+    for (const inboundMessageGroup of groupedMessages) {
+      const appendedMessages = whatsAppChatStore.appendInboundMessages({
+        senderId: inboundMessageGroup.from,
+        messages: inboundMessageGroup.messages.map((message) => ({
+          messageId: message.messageId,
+          text: message.text,
+        })),
+      });
+
+      if (appendedMessages.length === 0) {
+        continue;
+      }
+
       const response = await chatService.run({
-        messages: buildChatMessages(inboundMessage),
+        messages: buildChatMessages({
+          profileName: inboundMessageGroup.profileName,
+          history: whatsAppChatStore.getMessages(inboundMessageGroup.from),
+        }),
       });
 
       const responseText = response.text.trim();
+      processedMessagesCount += appendedMessages.length;
 
       if (!responseText) {
         continue;
       }
 
-      await whatsAppMessageSender.sendTextMessage({
-        to: inboundMessage.from,
+      whatsAppChatStore.appendAssistantMessage({
+        senderId: inboundMessageGroup.from,
         text: responseText,
-        replyToMessageId: inboundMessage.messageId,
+      });
+
+      await whatsAppMessageSender.sendTextMessage({
+        to: inboundMessageGroup.from,
+        text: responseText,
+        replyToMessageId: inboundMessageGroup.latestMessageId,
       });
     }
 
-    return inboundMessages.length;
+    return processedMessagesCount;
   };
 
   return {
@@ -116,20 +150,53 @@ const extractInboundTextMessages = (
   return messages;
 };
 
-const buildChatMessages = (message: InboundTextMessage) => {
-  const messages: Array<{ role: "system" | "user"; content: string }> = [];
+const groupInboundMessagesBySender = (
+  messages: InboundTextMessage[],
+): GroupedInboundTextMessages[] => {
+  const groupedMessagesBySender = new Map<string, GroupedInboundTextMessages>();
 
-  if (message.profileName) {
-    messages.push({
-      role: "system",
-      content: `O usuario do WhatsApp se chama ${message.profileName}.`,
+  for (const message of messages) {
+    const existingGroup = groupedMessagesBySender.get(message.from);
+
+    if (existingGroup) {
+      existingGroup.messages.push(message);
+      existingGroup.latestMessageId = message.messageId;
+
+      if (!existingGroup.profileName && message.profileName) {
+        existingGroup.profileName = message.profileName;
+      }
+
+      continue;
+    }
+
+    groupedMessagesBySender.set(message.from, {
+      from: message.from,
+      latestMessageId: message.messageId,
+      profileName: message.profileName,
+      messages: [message],
     });
   }
 
-  messages.push({
-    role: "user",
-    content: message.text,
-  });
+  return [...groupedMessagesBySender.values()];
+};
+
+const buildChatMessages = ({
+  profileName,
+  history,
+}: {
+  profileName?: string;
+  history: ChatMessageDTO[];
+}) => {
+  const messages: ChatMessageDTO[] = [];
+
+  if (profileName) {
+    messages.push({
+      role: "system",
+      content: `O usuario do WhatsApp se chama ${profileName}.`,
+    });
+  }
+
+  messages.push(...history);
 
   return messages;
 };

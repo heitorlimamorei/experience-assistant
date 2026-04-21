@@ -12,3 +12,11 @@ services:
         value: gpt-5.4-mini
       - key: OPENAI_AGENT_MAX_STEPS
         value: "5"
+      - key: META_WEBHOOK_VERIFY_TOKEN
+        sync: false
+      - key: META_WHATSAPP_ACCESS_TOKEN
+        sync: false
+      - key: META_WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: META_GRAPH_API_VERSION
+        value: v23.0

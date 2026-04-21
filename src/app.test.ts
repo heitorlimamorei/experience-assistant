@@ -6,6 +6,7 @@ import type { AppConfig } from "./config/config";
 import type { ChatRequestDTO, ChatResponseDTO } from "./dtos/chat.dto";
 import type { ChatService } from "./services/chat.service";
 import type { HealthReader } from "./services/health.service";
+import type { WhatsAppWebhookService } from "./services/whatsapp-webhook.service";
 
 const NewFakeHealthService = (): HealthReader => {
   return {
@@ -48,12 +49,25 @@ const createFakeDependencies = (): ApplicationDependencies => {
     port: 3000,
     openaiModel: "gpt-5.4-mini",
     openaiAgentMaxSteps: 5,
+    metaGraphApiVersion: "v23.0",
   };
 
   return {
     config,
     healthService: NewFakeHealthService(),
     chatService: NewFakeChatService(),
+    whatsAppWebhookService: NewFakeWhatsAppWebhookService(),
+  };
+};
+
+const NewFakeWhatsAppWebhookService = (): WhatsAppWebhookService => {
+  return {
+    verifyWebhook: (query) => {
+      return query["hub.challenge"] || "";
+    },
+    handleIncomingWebhook: async () => {
+      return 1;
+    },
   };
 };
 
@@ -97,5 +111,57 @@ describe("application", () => {
 
     expect(response.status).toBe(200);
     expect(parsedBody.tools[0]?.toolName).toBe("getCurrentDateTime");
+  });
+
+  it("verifies the WhatsApp webhook", async () => {
+    const app = NewApp(createFakeDependencies());
+
+    const response = await app.request(
+      "/webhooks/meta/whatsapp?hub.mode=subscribe&hub.verify_token=test&hub.challenge=abc123",
+    );
+
+    expect(response.status).toBe(200);
+    expect(await response.text()).toBe("abc123");
+  });
+
+  it("accepts WhatsApp webhook payloads", async () => {
+    const app = NewApp(createFakeDependencies());
+
+    const response = await app.request("/webhooks/meta/whatsapp", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        object: "whatsapp_business_account",
+        entry: [
+          {
+            changes: [
+              {
+                value: {
+                  messages: [
+                    {
+                      id: "wamid.message",
+                      from: "5511999999999",
+                      type: "text",
+                      text: {
+                        body: "Oi",
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          },
+        ],
+      }),
+    });
+
+    const body = (await response.json()) as {
+      received: boolean;
+    };
+
+    expect(response.status).toBe(200);
+    expect(body.received).toBe(true);
   });
 });

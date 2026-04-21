@@ -3,6 +3,7 @@ import { Hono } from "hono";
 import type { ApplicationDependencies } from "./container/container";
 import { NewChatHandler } from "./handlers/chat.handler";
 import { NewHealthHandler } from "./handlers/health.handler";
+import { NewWhatsAppWebhookHandler } from "./handlers/whatsapp-webhook.handler";
 import { ApplicationError } from "./shared/errors/application.error";
 
 export const NewApp = (dependencies: ApplicationDependencies): Hono => {
@@ -15,6 +16,10 @@ export const NewApp = (dependencies: ApplicationDependencies): Hono => {
       docs: {
         health: "GET /health",
         chat: "POST /chat",
+        whatsAppWebhook: [
+          "GET /webhooks/meta/whatsapp",
+          "POST /webhooks/meta/whatsapp",
+        ],
       },
     });
   });
@@ -24,6 +29,12 @@ export const NewApp = (dependencies: ApplicationDependencies): Hono => {
     "/",
     NewChatHandler({
       chatService: dependencies.chatService,
+    }),
+  );
+  app.route(
+    "/",
+    NewWhatsAppWebhookHandler({
+      whatsAppWebhookService: dependencies.whatsAppWebhookService,
     }),
   );
 

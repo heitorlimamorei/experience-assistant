@@ -71,50 +71,32 @@ export const NewTwilioTableFormatTool = (): TwilioTableFormatTool => {
   return {
     tool: tool({
       description:
-        "Monta uma tabela textual compacta para envio em mensagens Twilio/WhatsApp. Use quando precisar listar itens, precos, quantidades ou resumos em colunas legiveis dentro de um body de texto.",
+        "Monta um layout textual compativel com mensagens Twilio/WhatsApp usando apenas plain text, negrito simples e quebras de linha. Use quando precisar listar itens, entradas, saidas, precos, quantidades ou resumos sem depender de tabelas ASCII.",
       inputSchema: twilioTableFormatInputSchema,
       execute: async (input): Promise<TwilioTableFormatOutput> => {
-        const widths = computeColumnWidths(input);
         let truncatedCells = 0;
-        const separator = buildSeparator(widths);
         const lines: string[] = [];
 
         if (input.title) {
           lines.push(`*${input.title}*`);
         }
 
-        lines.push(formatRow(input.columns.map((column) => column.label), widths));
-        lines.push(separator);
-
         for (const row of input.rows) {
-          const cells = input.columns.map((column) => {
-            const rawValue = row[column.key];
-
-            return rawValue === null || rawValue === undefined
-              ? ""
-              : String(rawValue);
-          });
-          const formattedCells = cells.map((cell, index) => {
-            const width = widths[index]!;
-            const normalizedCell = normalizeCellValue(cell);
-            const truncatedCell = truncateCell(normalizedCell, width);
-
-            if (truncatedCell !== normalizedCell) {
-              truncatedCells += 1;
-            }
-
-            return alignCell(
-              truncatedCell,
-              width,
-              input.columns[index]!.align ?? "left",
-            );
+          const formattedRow = formatRowForTwilio({
+            columns: input.columns,
+            row,
+            maxLineWidth: input.maxLineWidth,
           });
 
-          lines.push(`| ${formattedCells.join(" | ")} |`);
+          truncatedCells += formattedRow.truncatedCells;
+          lines.push(...formattedRow.lines);
         }
 
         if (input.footer.length > 0) {
-          lines.push(separator);
+          if (lines.length > 0) {
+            lines.push("");
+          }
+
           lines.push(...input.footer);
         }
 
@@ -128,67 +110,108 @@ export const NewTwilioTableFormatTool = (): TwilioTableFormatTool => {
   };
 };
 
-const computeColumnWidths = (
-  input: z.infer<typeof twilioTableFormatInputSchema>,
-): number[] => {
-  const maxContentWidths = input.columns.map((column) => {
-    const labelWidth = column.label.length;
-    const rowWidth = Math.max(
-      0,
-      ...input.rows.map((row) => {
-        const rawValue = row[column.key];
+const formatRowForTwilio = ({
+  columns,
+  row,
+  maxLineWidth,
+}: {
+  columns: z.infer<typeof twilioTableColumnSchema>[];
+  row: z.infer<typeof twilioTableRowSchema>;
+  maxLineWidth: number;
+}): {
+  lines: string[];
+  truncatedCells: number;
+} => {
+  const normalizedCells = columns.map((column) => {
+    const rawValue = row[column.key];
 
-        return normalizeCellValue(
-          rawValue === null || rawValue === undefined ? "" : String(rawValue),
-        ).length;
-      }),
+    return {
+      label: normalizeCellValue(column.label),
+      value: normalizeCellValue(
+        rawValue === null || rawValue === undefined ? "" : String(rawValue),
+      ),
+      maxWidth: column.maxWidth,
+    };
+  });
+  let truncatedCells = 0;
+
+  if (
+    normalizedCells.length === 2 &&
+    isPrimaryLabelColumn(columns[0]!.label)
+  ) {
+    const primaryLabel = truncateCell(
+      normalizedCells[0]!.value,
+      columns[0]!.maxWidth ?? 48,
+    );
+    const secondaryValue = truncateCellToLine(
+      normalizedCells[1]!.value,
+      maxLineWidth - primaryLabel.length - 6,
+      columns[1]!.maxWidth,
     );
 
-    return Math.max(labelWidth, rowWidth, 3);
-  });
-  const widths = input.columns.map((column, index) =>
-    Math.min(maxContentWidths[index]!, column.maxWidth ?? maxContentWidths[index]!),
+    if (primaryLabel !== normalizedCells[0]!.value) {
+      truncatedCells += 1;
+    }
+
+    if (secondaryValue !== normalizedCells[1]!.value) {
+      truncatedCells += 1;
+    }
+
+    return {
+      lines: [`• *${primaryLabel}:* ${secondaryValue}`],
+      truncatedCells,
+    };
+  }
+
+  const firstCell = normalizedCells[0]!;
+  const firstValue = truncateCellToLine(
+    firstCell.value,
+    maxLineWidth - 4,
+    columns[0]!.maxWidth,
   );
-  const totalWidth = computeRenderedWidth(widths);
 
-  if (totalWidth <= input.maxLineWidth) {
-    return widths;
+  if (firstValue !== firstCell.value) {
+    truncatedCells += 1;
   }
 
-  const minimumWidths = input.columns.map(() => 3);
-  let overflow = totalWidth - input.maxLineWidth;
+  const lines = [`• *${firstCell.label}:* ${firstValue}`];
 
-  while (overflow > 0) {
-    let reducedAny = false;
+  for (let index = 1; index < normalizedCells.length; index += 1) {
+    const cell = normalizedCells[index]!;
+    const value = truncateCellToLine(
+      cell.value,
+      maxLineWidth - cell.label.length - 5,
+      columns[index]!.maxWidth,
+    );
 
-    for (let index = 0; index < widths.length && overflow > 0; index += 1) {
-      if (widths[index]! > minimumWidths[index]!) {
-        widths[index] = widths[index]! - 1;
-        overflow -= 1;
-        reducedAny = true;
-      }
+    if (value !== cell.value) {
+      truncatedCells += 1;
     }
 
-    if (!reducedAny) {
-      break;
-    }
+    lines.push(`  *${cell.label}:* ${value}`);
   }
 
-  return widths;
+  return {
+    lines,
+    truncatedCells,
+  };
 };
 
-const computeRenderedWidth = (widths: number[]): number => {
-  return widths.reduce((sum, width) => sum + width, 0) + widths.length * 3 + 1;
-};
+const isPrimaryLabelColumn = (label: string): boolean => {
+  const normalizedLabel = normalizeCellValue(label)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase();
 
-const buildSeparator = (widths: number[]): string => {
-  return `|-${widths.map((width) => "-".repeat(width)).join("-|-")}-|`;
-};
-
-const formatRow = (values: string[], widths: number[]): string => {
-  return `| ${values
-    .map((value, index) => alignCell(truncateCell(value, widths[index]!), widths[index]!, "left"))
-    .join(" | ")} |`;
+  return [
+    "descricao",
+    "description",
+    "item",
+    "campo",
+    "label",
+    "entrada",
+    "saida",
+  ].includes(normalizedLabel);
 };
 
 const normalizeCellValue = (value: string): string => {
@@ -197,7 +220,7 @@ const normalizeCellValue = (value: string): string => {
 
 const truncateCell = (value: string, width: number): string => {
   if (value.length <= width) {
-    return value.padEnd(width, " ");
+    return value;
   }
 
   if (width <= 3) {
@@ -207,14 +230,15 @@ const truncateCell = (value: string, width: number): string => {
   return `${value.slice(0, width - 3)}...`;
 };
 
-const alignCell = (
+const truncateCellToLine = (
   value: string,
   width: number,
-  align: "left" | "right",
+  maxWidth?: number,
 ): string => {
-  const trimmedValue = value.length > width ? value.slice(0, width) : value;
+  const safeWidth = Math.max(3, width);
+  const targetWidth = maxWidth
+    ? Math.min(maxWidth, safeWidth)
+    : safeWidth;
 
-  return align === "right"
-    ? trimmedValue.padStart(width, " ")
-    : trimmedValue.padEnd(width, " ");
+  return truncateCell(value, targetWidth);
 };

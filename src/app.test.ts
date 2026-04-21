@@ -124,6 +124,34 @@ describe("application", () => {
     expect(await response.text()).toBe("abc123");
   });
 
+  it("describes the WhatsApp webhook route when opened without Meta query params", async () => {
+    const app = NewApp(createFakeDependencies());
+
+    const response = await app.request("/webhooks/meta/whatsapp");
+    const body = (await response.json()) as {
+      ok: boolean;
+      route: string;
+      methods: string[];
+      verification: {
+        mode: string;
+        verifyTokenQueryParam: string;
+        challengeQueryParam: string;
+      };
+    };
+
+    expect(response.status).toBe(200);
+    expect(body).toEqual({
+      ok: true,
+      route: "/webhooks/meta/whatsapp",
+      methods: ["GET", "POST"],
+      verification: {
+        mode: "subscribe",
+        verifyTokenQueryParam: "hub.verify_token",
+        challengeQueryParam: "hub.challenge",
+      },
+    });
+  });
+
   it("accepts WhatsApp webhook payloads", async () => {
     const app = NewApp(createFakeDependencies());
 

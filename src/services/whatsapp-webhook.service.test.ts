@@ -243,4 +243,63 @@ describe("whatsapp webhook service", () => {
       },
     ]);
   });
+
+  it("ignores webhook payloads that only contain delivery statuses", async () => {
+    const chatRequests: ChatRequestDTO[] = [];
+    const sentMessages: SendWhatsAppTextMessageInput[] = [];
+    const whatsAppChatStore = NewInMemoryWhatsAppChatStore();
+
+    const chatService: ChatService = {
+      run: async (input): Promise<ChatResponseDTO> => {
+        chatRequests.push(input);
+
+        return {
+          text: "Nao deveria ser chamado.",
+          model: "gpt-5.4-mini",
+          steps: 1,
+          tools: [],
+        };
+      },
+    };
+
+    const whatsAppMessageSender: WhatsAppMessageSender = {
+      sendTextMessage: async (input) => {
+        sentMessages.push(input);
+      },
+    };
+
+    const service = NewWhatsAppWebhookService({
+      config,
+      chatService,
+      whatsAppMessageSender,
+      whatsAppChatStore,
+    });
+
+    const processedMessagesCount = await service.handleIncomingWebhook({
+      object: "whatsapp_business_account",
+      entry: [
+        {
+          changes: [
+            {
+              value: {
+                metadata: {
+                  phone_number_id: "1125733920617385",
+                },
+                statuses: [
+                  {
+                    id: "wamid-1",
+                    status: "failed",
+                  },
+                ],
+              },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(processedMessagesCount).toBe(0);
+    expect(chatRequests).toHaveLength(0);
+    expect(sentMessages).toHaveLength(0);
+  });
 });

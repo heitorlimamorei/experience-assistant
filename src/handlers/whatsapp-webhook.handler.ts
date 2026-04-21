@@ -18,6 +18,23 @@ export const NewWhatsAppWebhookHandler = ({
 
   handler.get("/webhooks/meta/whatsapp", (context) => {
     const query = context.req.query();
+    const hasVerificationQueryParams =
+      Boolean(query["hub.mode"]) ||
+      Boolean(query["hub.verify_token"]) ||
+      Boolean(query["hub.challenge"]);
+
+    if (!hasVerificationQueryParams) {
+      return context.json({
+        ok: true,
+        route: "/webhooks/meta/whatsapp",
+        methods: ["GET", "POST"],
+        verification: {
+          mode: "subscribe",
+          verifyTokenQueryParam: "hub.verify_token",
+          challengeQueryParam: "hub.challenge",
+        },
+      });
+    }
 
     console.info("[meta-whatsapp-webhook] verification request", {
       mode: query["hub.mode"],

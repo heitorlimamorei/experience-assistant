@@ -17,8 +17,16 @@ export const NewWhatsAppWebhookHandler = ({
   const handler = new Hono();
 
   handler.get("/webhooks/meta/whatsapp", (context) => {
+    const query = context.req.query();
+
+    console.info("[meta-whatsapp-webhook] verification request", {
+      mode: query["hub.mode"],
+      challengePresent: Boolean(query["hub.challenge"]),
+      verifyTokenPresent: Boolean(query["hub.verify_token"]),
+    });
+
     const parsedQuery = whatsAppWebhookVerificationQuerySchema.safeParse(
-      context.req.query(),
+      query,
     );
 
     if (!parsedQuery.success) {
@@ -36,6 +44,11 @@ export const NewWhatsAppWebhookHandler = ({
     const requestBody = await context.req.json().catch(() => {
       throw new ApplicationError(400, "Body JSON invalido.");
     });
+
+    console.info(
+      "[meta-whatsapp-webhook] incoming event",
+      summarizeIncomingWebhookRequest(requestBody),
+    );
 
     const parsedPayload = whatsAppWebhookPayloadSchema.safeParse(requestBody);
 
@@ -80,4 +93,70 @@ const getExecutionContext = (
   } catch {
     return undefined;
   }
+};
+
+const summarizeIncomingWebhookRequest = (requestBody: unknown) => {
+  if (!requestBody || typeof requestBody !== "object") {
+    return {
+      bodyType: typeof requestBody,
+    };
+  }
+
+  const payload = requestBody as {
+    object?: unknown;
+    entry?: Array<{
+      changes?: Array<{
+        value?: {
+          metadata?: {
+            phone_number_id?: unknown;
+            display_phone_number?: unknown;
+          };
+          messages?: Array<{
+            id?: unknown;
+            from?: unknown;
+            type?: unknown;
+          }>;
+          statuses?: unknown[];
+        };
+      }>;
+    }>;
+  };
+
+  const entries = Array.isArray(payload.entry) ? payload.entry : [];
+  const changes = entries.flatMap((entry) =>
+    Array.isArray(entry.changes) ? entry.changes : [],
+  );
+  const messageEvents = changes.flatMap((change) =>
+    Array.isArray(change.value?.messages) ? change.value.messages : [],
+  );
+  const statusEvents = changes.flatMap((change) =>
+    Array.isArray(change.value?.statuses) ? change.value.statuses : [],
+  );
+
+  return {
+    object: payload.object,
+    entryCount: entries.length,
+    changeCount: changes.length,
+    messageCount: messageEvents.length,
+    statusCount: statusEvents.length,
+    phoneNumberIds: [
+      ...new Set(
+        changes
+          .map((change) => change.value?.metadata?.phone_number_id)
+          .filter((value): value is string => typeof value === "string"),
+      ),
+    ],
+    displayPhoneNumbers: [
+      ...new Set(
+        changes
+          .map((change) => change.value?.metadata?.display_phone_number)
+          .filter((value): value is string => typeof value === "string"),
+      ),
+    ],
+    messages: messageEvents.map((message) => ({
+      id: typeof message.id === "string" ? message.id : undefined,
+      from: typeof message.from === "string" ? message.from : undefined,
+      type: typeof message.type === "string" ? message.type : undefined,
+    })),
+  };
 };

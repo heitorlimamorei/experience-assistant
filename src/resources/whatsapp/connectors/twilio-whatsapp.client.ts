@@ -1,3 +1,5 @@
+import { Buffer } from "node:buffer";
+
 import twilio from "twilio";
 
 import type { AppConfig } from "../../../config/config";
@@ -8,8 +10,20 @@ export interface SendWhatsAppTextMessageInput {
   text: string;
 }
 
+export interface ReadWhatsAppInboundMediaInput {
+  url: string;
+}
+
+export interface ReadWhatsAppInboundMediaOutput {
+  data: string;
+  mediaType: string;
+}
+
 export interface WhatsAppMessageSender {
   sendTextMessage(input: SendWhatsAppTextMessageInput): Promise<void>;
+  readInboundMedia(
+    input: ReadWhatsAppInboundMediaInput,
+  ): Promise<ReadWhatsAppInboundMediaOutput>;
 }
 
 export interface TwilioWhatsAppClientDependencies {
@@ -34,6 +48,9 @@ export const NewTwilioWhatsAppClient = ({
   const authToken = config.twilioAuthToken;
   const fromAddress = config.twilioWhatsAppFrom;
   const client = twilio(accountSid, authToken);
+  const basicAuthHeader = `Basic ${Buffer.from(
+    `${accountSid}:${authToken}`,
+  ).toString("base64")}`;
   const statusCallbackUrl = config.appBaseUrl
     ? new URL("/webhooks/twilio/whatsapp/status", config.appBaseUrl).toString()
     : undefined;
@@ -72,8 +89,47 @@ export const NewTwilioWhatsAppClient = ({
     }
   };
 
+  const readInboundMedia = async ({
+    url,
+  }: ReadWhatsAppInboundMediaInput): Promise<ReadWhatsAppInboundMediaOutput> => {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Authorization: basicAuthHeader,
+        },
+      });
+
+      if (!response.ok) {
+        throw new Error(`Twilio media request failed with status ${response.status}.`);
+      }
+
+      const mediaTypeHeader = response.headers.get("content-type");
+      const mediaType = mediaTypeHeader?.split(";")[0]?.trim();
+
+      return {
+        data: Buffer.from(await response.arrayBuffer()).toString("base64"),
+        mediaType: mediaType || "application/octet-stream",
+      };
+    } catch (error) {
+      throw new ApplicationError(
+        502,
+        "Falha ao baixar a midia recebida do WhatsApp via Twilio.",
+        {
+          error:
+            error instanceof Error
+              ? {
+                  name: error.name,
+                  message: error.message,
+                }
+              : error,
+        },
+      );
+    }
+  };
+
   return {
     sendTextMessage,
+    readInboundMedia,
   };
 };
 

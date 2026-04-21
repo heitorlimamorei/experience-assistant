@@ -1,7 +1,10 @@
+import { Buffer } from "node:buffer";
+
 import type { ModelMessage } from "ai";
 
 import type {
   ChatMessageDTO,
+  ChatMessageContentPartDTO,
   ChatRequestDTO,
   ChatResponseDTO,
   ChatToolTraceDTO,
@@ -66,21 +69,80 @@ export const NewChatService = ({
 const mapChatMessageDTOToModelMessage = (
   message: ChatMessageDTO,
 ): ModelMessage => {
+  if (typeof message.content === "string") {
+    switch (message.role) {
+      case "system":
+        return {
+          role: "system",
+          content: message.content,
+        };
+      case "assistant":
+        return {
+          role: "assistant",
+          content: [{ type: "text", text: message.content }],
+        };
+      case "user":
+        return {
+          role: "user",
+          content: [{ type: "text", text: message.content }],
+        };
+    }
+  }
+
   switch (message.role) {
     case "system":
       return {
         role: "system",
-        content: message.content,
+        content: mapContentPartsToPlainText(message.content),
       };
     case "assistant":
       return {
         role: "assistant",
-        content: [{ type: "text", text: message.content }],
+        content: [
+          {
+            type: "text",
+            text: mapContentPartsToPlainText(message.content),
+          },
+        ],
       };
     case "user":
       return {
         role: "user",
-        content: [{ type: "text", text: message.content }],
+        content: message.content.map(mapChatMessageContentPartDTOToModelPart),
       };
   }
+};
+
+const mapChatMessageContentPartDTOToModelPart = (
+  part: ChatMessageContentPartDTO,
+) => {
+  switch (part.type) {
+    case "text":
+      return {
+        type: "text" as const,
+        text: part.text,
+      };
+    case "file":
+      return {
+        type: "file" as const,
+        data: Buffer.from(part.data, "base64"),
+        mediaType: part.mediaType,
+        filename: part.filename,
+      };
+  }
+};
+
+const mapContentPartsToPlainText = (
+  parts: ChatMessageContentPartDTO[],
+): string => {
+  return parts
+    .map((part) => {
+      switch (part.type) {
+        case "text":
+          return part.text;
+        case "file":
+          return `[Attachment: ${part.mediaType}]`;
+      }
+    })
+    .join("\n");
 };

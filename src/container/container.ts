@@ -6,7 +6,10 @@ import { NewSystemClock } from "../resources/ai/tools/system.clock";
 import { NewInMemoryWhatsAppChatStore } from "../resources/whatsapp/in-memory-whatsapp-chat-store";
 import { NewTwilioWhatsAppClient } from "../resources/whatsapp/connectors/twilio-whatsapp.client";
 import { NewChatService, type ChatService } from "../services/chat.service";
-import { NewHealthService, type HealthReader } from "../services/health.service";
+import {
+  NewHealthService,
+  type HealthReader,
+} from "../services/health.service";
 import {
   NewWhatsAppWebhookService,
   type WhatsAppWebhookService,

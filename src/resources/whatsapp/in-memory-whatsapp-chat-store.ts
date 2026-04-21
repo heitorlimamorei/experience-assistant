@@ -4,7 +4,7 @@ export interface AppendInboundWhatsAppMessagesInput {
   senderId: string;
   messages: Array<{
     messageId: string;
-    text: string;
+    content: ChatMessageDTO["content"];
   }>;
 }
 
@@ -72,7 +72,7 @@ export const NewInMemoryWhatsAppChatStore = (): WhatsAppChatStore => {
 
       const chatMessage: ChatMessageDTO = {
         role: "user",
-        content: message.text,
+        content: message.content,
       };
 
       state.messages.push(chatMessage);

@@ -41,6 +41,9 @@ describe("whatsapp webhook service", () => {
       sendTextMessage: async (input) => {
         sentMessages.push(input);
       },
+      readInboundMedia: async () => {
+        throw new Error("Nao deveria ser chamado.");
+      },
     };
 
     const service = NewWhatsAppWebhookService({
@@ -110,6 +113,9 @@ describe("whatsapp webhook service", () => {
       sendTextMessage: async (input) => {
         sentMessages.push(input);
       },
+      readInboundMedia: async () => {
+        throw new Error("Nao deveria ser chamado.");
+      },
     };
 
     const service = NewWhatsAppWebhookService({
@@ -169,7 +175,7 @@ describe("whatsapp webhook service", () => {
     ]);
   });
 
-  it("ignores inbound webhook payloads without text body", async () => {
+  it("analyzes inbound image messages without text body", async () => {
     const chatRequests: ChatRequestDTO[] = [];
     const sentMessages: SendWhatsAppTextMessageInput[] = [];
     const whatsAppChatStore = NewInMemoryWhatsAppChatStore();
@@ -191,6 +197,12 @@ describe("whatsapp webhook service", () => {
       sendTextMessage: async (input) => {
         sentMessages.push(input);
       },
+      readInboundMedia: async () => {
+        return {
+          data: "aW1hZ2UtYnl0ZXM=",
+          mediaType: "image/jpeg",
+        };
+      },
     };
 
     const service = NewWhatsAppWebhookService({
@@ -206,11 +218,30 @@ describe("whatsapp webhook service", () => {
       WaId: "5511999999999",
       Body: "",
       NumMedia: "1",
+      MediaUrl0: "https://api.twilio.com/2010-04-01/Accounts/AC123/Messages/MM123/Media/ME123",
+      MediaContentType0: "image/jpeg",
     });
 
-    expect(processedMessagesCount).toBe(0);
-    expect(chatRequests).toHaveLength(0);
-    expect(sentMessages).toHaveLength(0);
+    expect(processedMessagesCount).toBe(1);
+    expect(chatRequests).toHaveLength(1);
+    expect(chatRequests[0]?.messages).toEqual([
+      {
+        role: "user",
+        content: [
+          {
+            type: "file",
+            data: "aW1hZ2UtYnl0ZXM=",
+            mediaType: "image/jpeg",
+          },
+        ],
+      },
+    ]);
+    expect(sentMessages).toEqual([
+      {
+        to: "5511999999999",
+        text: "Nao deveria ser chamado.",
+      },
+    ]);
   });
 
   it("accepts Twilio status callbacks without affecting the conversation history", async () => {
@@ -229,6 +260,9 @@ describe("whatsapp webhook service", () => {
 
     const whatsAppMessageSender: WhatsAppMessageSender = {
       sendTextMessage: async () => {},
+      readInboundMedia: async () => {
+        throw new Error("Nao deveria ser chamado.");
+      },
     };
 
     const service = NewWhatsAppWebhookService({

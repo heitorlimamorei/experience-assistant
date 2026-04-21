@@ -1,6 +1,7 @@
 import { NewEnvironmentConfig, type AppConfig } from "../config/config";
 import { NewExampleAgent } from "../resources/ai/agents/example.agent";
 import { NewOpenAIModelFactory } from "../resources/ai/connectors/openai-model.factory";
+import { NewBrazilianInvoiceAnalysisTool } from "../resources/ai/tools/brazilian-invoice-analysis.tool";
 import { NewCurrentDateTimeTool } from "../resources/ai/tools/current-date-time.tool";
 import { NewSystemClock } from "../resources/ai/tools/system.clock";
 import { NewInMemoryWhatsAppChatStore } from "../resources/whatsapp/in-memory-whatsapp-chat-store";
@@ -28,12 +29,14 @@ export const NewContainer = (): ApplicationDependencies => {
   const currentDateTimeTool = NewCurrentDateTimeTool({
     clock: NewSystemClock(),
   }).tool;
+  const brazilianInvoiceAnalysisTool = NewBrazilianInvoiceAnalysisTool().tool;
   const whatsAppMessageSender = NewTwilioWhatsAppClient({ config });
   const whatsAppChatStore = NewInMemoryWhatsAppChatStore();
   const exampleAgent = NewExampleAgent({
     config,
     modelFactory: openAIModelFactory,
     currentDateTimeTool,
+    brazilianInvoiceAnalysisTool,
   });
   const chatService = NewChatService({ config, exampleAgent });
 
